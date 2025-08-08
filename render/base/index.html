@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>渲染器的基本原理</title>
+</head>
+<body>
+<div id="app"></div>
+</body>
+<script>
+    const vnode = {
+        type: 'div',
+        props: {
+            id: 'layer1',
+            onClick: () => alert("hello")
+        },
+        children: "click me"
+    }
+
+    function render(vnode, container) {
+
+        // 使用vnode.type创建标签元素
+        const el = document.createElement(vnode.type)
+
+        for (const key in vnode.props) {
+            if (/^on/.test(key)) {
+                el.addEventListener(key.slice(2).toLowerCase(), vnode.props[key])
+            } else {
+                el.setAttribute(key, vnode.props[key])
+            }
+        }
+
+        if (typeof vnode.children === 'string') {
+            el.textContent = vnode.children
+        } else if (Array.isArray(vnode.children)) {
+            vnode.children.forEach(child => render(child, el))
+        }else {
+            render(vnode.children, el)
+        }
+
+        container.appendChild(el)
+    }
+
+    render(vnode, document.getElementById('app'))
+</script>
+</html>
