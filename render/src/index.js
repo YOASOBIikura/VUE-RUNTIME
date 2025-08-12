@@ -116,7 +116,7 @@ function createRender(options) {
         container._vnode = vnode
     }
 
-    function patchChildren(oldVnode, newVnode, container){
+    function patchChildren (oldVnode, newVnode, container){
         // 如果新子节点是文本类型
         if (typeof newVnode.children == 'string'){
 
@@ -130,12 +130,65 @@ function createRender(options) {
         }else if (Array.isArray(newVnode.children)){ // 如果是数组
 
             if (Array.isArray(oldVnode.children)){
-                oldVnode.children.forEach(child => unmount(child))
 
-                // 循环挂载新的节点
-                newVnode.children.forEach(child => {
-                    patch(null, child, container)
-                })
+                const oldChildren = oldVnode.children
+                const newChildren = newVnode.children
+
+                // 是否找到对应的旧节点 通过boolean开关控制
+                let find = false
+                let lastIndex = 0 // 存储寻找过程中遇到的最大索引值
+                // 循环遍历新的children
+                for (let i = 0; i < newChildren.length; i++){
+                    const n = newChildren[i]
+                    for (let j = 0; j < oldChildren.length; j++) {
+                        const o = oldChildren[j]
+                        if (n.key === o.key){
+                            // 找到了对应的旧节点
+                            find = true
+                            patch(o, n, container)
+                            if (j < lastIndex){
+                                // 获取新子节点的前一个节点
+                                const prevNode = newChildren[i - 1]
+                                if (prevNode){
+                                    // 需要获取子节点的真实DOM元素的下一个节点
+                                    // 注意这里是旧子节点对应的DOM引用
+                                    const anchor = prevNode.el.nextSibling
+                                    // 移动节点
+                                    insert(n.el, container, anchor)
+                                }
+                            }else {
+                                lastIndex = j
+                            }
+                            break
+                        }
+                    }
+                    // 如果没找到，就挂载新节点
+                    if (!find){
+                        // 获取当前newVNode的前一个节点
+                        const prevNode = newChildren[i - 1]
+                        let anchor = null
+                        if (prevNode){
+                            anchor = prevNode.el.nextSibling
+                        }else {
+                            // 如果没有前一个节点，使用它的下一个相邻兄弟元素作为锚点
+                            anchor = container.firstChild
+                        }
+                        // 挂载新节点
+                        // 注意之前path函数没有第四个参数，需要改造一下
+                        patch(null, n, container, anchor)
+                    }
+                }
+
+                // 循环卸载多余的旧节点
+                for (let i = 0; i < oldChildren.length; i++){
+                    const oldVNode = oldChildren[i]
+                    // 用旧节点去新节点中寻找是否具有相同key值的节点
+                    const has = newChildren.find(newVNode => newVNode.key === oldVNode.key)
+                    // 如果没有找到相同节点的key，那么就是删除节点
+                    if (!has){
+                        unmount(oldVNode)
+                    }
+                }
             }else {
                 setElementText(container, '')
 
@@ -177,7 +230,7 @@ function createRender(options) {
         patchChildren(oldVnode, newVnode, el)
     }
 
-    function patch(oldVnode, newVnode, container) {
+    function patch(oldVnode, newVnode, container, anchor = null) {
         // 如果新旧节点不一样，则卸载旧的挂载新的
         if (oldVnode && oldVnode.type !== newVnode.type){
             unmount(oldVnode)
@@ -189,7 +242,7 @@ function createRender(options) {
         if (typeof type === 'string'){
             // 如果旧节点不存在，就以为着是挂载，调用mountElement函数完成挂载
             if (!oldVnode){
-                mountElement(newVnode, container)
+                mountElement(newVnode, container, anchor)
             }else {
                 patchElement(oldVnode, newVnode)
             }
@@ -228,7 +281,7 @@ function createRender(options) {
 
     }
     
-    function mountElement(vnode, container) {
+    function mountElement(vnode, container, anchor = null) {
         // 创建元素
         const el = createElement(vnode.type)
 
@@ -246,7 +299,7 @@ function createRender(options) {
 
 
 
-        insert(el, container)
+        insert(el, container, anchor)
     }
 
     return {
