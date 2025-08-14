@@ -331,6 +331,152 @@ function createRender(options) {
         }
     }
 
+    // 快速Diff算法
+    function patchKeyedChildren(oldVNode, newVNode, container){
+        const oldChildren = oldVNode.children
+        const newChildren = newVNode.children
+
+        // 处理相同的前置节点，索引j指向新旧两组子节点的开头
+        let j = 0
+        let oldVN = oldChildren[j]
+        let newVN = newChildren[j]
+        // while遍历向后循环，直到晕倒拥有不同的Key值的节点为止
+        while (oldVN.key === newVN.key){
+            // 调用patch函数进行更新
+            patch(oldVN, newVN, container)
+            // 更新索引j，递增+1
+            j++
+            oldVN = oldChildren[j]
+            newVN = newChildren[j]
+        }
+
+        // 更新相同的后置节点
+        let oldEnd = oldChildren.length - 1
+        let newEnd = newChildren.length - 1
+        oldVN = oldChildren[oldEnd]
+        newVN = newChildren[newEnd]
+
+        // while遍历向前循环，直到遇到不同的Key值的节点为止
+        while (oldVN.key === newVN.key){
+            patch(oldVN, newVN, container)
+
+            // 递减索引
+            oldEnd--
+            newEnd--
+            oldVN = oldChildren[oldEnd]
+            newVN = newChildren[newEnd]
+        }
+
+        // 满足下面的条件，说明j和newEnd之间的节点需要作为新节点进行插入
+        if (j > oldEnd && j <= newEnd){
+
+            // 插入锚点索引
+            const anchorIndex = newEnd + 1
+
+            // 锚点元素，如果锚点索引 >= 新子节点的长度 说明不需要插入, 直接挂载到尾部即可
+            const anchor = anchorIndex < newChildren.length ? newChildren[anchorIndex].el : null
+
+            // while循环，如果有多个，逐个挂载
+            while (j <= newEnd){
+                patch(null, newChildren[j++], container, anchor)
+            }
+        }else if (j > newEnd && j <= oldEnd){
+            while (j <= oldEnd){
+                unmount(oldChildren[j++])
+            }
+        }else{
+            // 新子节点中剩余未处理节点的数量
+            const count = newEnd - j + 1
+            const source = new Array(count)
+            source.fill(-1)
+            let moved = false
+            let pos = 0
+            // 更新过的节点的数量
+            let patched = 0
+            // 新旧节点的起始索引
+            const oldStart = j
+            const newStart = j
+
+            // 构建索引表
+            const keyIndex = {}
+            // 索引表中填入键值
+            for (let i = newStart; i <= newEnd; i++){
+                keyIndex[newChildren[i].key] = i
+            }
+
+            // 遍历旧节点中未处理的键值
+            for (let i = oldStart; i <= oldEnd; i++){
+                oldVN = oldChildren[i]
+
+                // 如果更新节点的数量 <= 需要更新的节点数则需要进行更新
+                if (patched <= count){
+                    // 通过索引表快速找到新子节点中具有相同的key值的节点位置
+                    const k = keyIndex[oldVN.key]
+
+                    if(typeof k !== 'undefined'){
+                        newVN = newChildren[k]
+                        patch(oldVN, newVN, container)
+                        // 更新了节点就自增
+                        patched++
+                        // 填充source数组
+                        source[k - newStart] = i
+                        if (k < pos){
+                            moved = true
+                        }else {
+                            pos = k
+                        }
+                    }else {
+                        // 没有找到 卸载旧节点
+                        unmount(oldVN)
+                    }
+                }else {
+                    unmount(oldVN)
+                }
+
+            }
+
+            if (moved){
+                // 创建一个新数组，将source数组中的元素进行排序
+                const seq = LIS(source)
+                // s 指向最长递增子序列的最后一个元素
+                let s = seq.length - 1
+                // i 指向新的一组子节点的最后一个元素
+                let i = count - 1
+
+                // for 循环i递减
+                for (; i >= 0; i--){
+                    // 当新节点的值等于-1时，说明是全新的节点，直接挂载
+                    if (source[i] === -1){
+                        // 该节点在新子节点中的真实位置索引
+                        const pos = i + newStart
+                        const newVN = newChildren[pos]
+                        // 改节点的一下节点的位置索引
+                        const nextPos = pos + 1
+
+                        // 锚点
+                        const anchor = nextPos < newChildren.length ? newChildren[nextPos].el : null
+                        patch(null, newVN, container, anchor)
+                    } else if (source[i] !== seq[s]){
+                        // 如果节点索引i不等于seq[s]的值，说明该节点需要移动
+                        // 该节点在新的一组子节点中真实位置索引
+                        const pos = i + newStart
+                        const newVN = newChildren[pos]
+                        // 该节点的下一个节点位置索引
+                        const nextPos = pos + 1
+                        // 锚点
+                        const anchor = nextPos < newChildren.length ? newChildren[nextPos].el : null
+                        // 移动
+                        insert(newVN.el, container, anchor)
+                    }else {
+                        // 当i===seq[s]，说明该节点不需要移动
+                        // 只需要让s指向下一个位置
+                        s--
+                    }
+                }
+            }
+        }
+    }
+
     function patchElement(oldVnode, newVnode){
         const el = newVnode.el = oldVnode.el
         const oldProps = oldVnode.props
@@ -353,6 +499,8 @@ function createRender(options) {
         // 子节点更新
         patchChildren(oldVnode, newVnode, el)
     }
+
+
 
     function patch(oldVnode, newVnode, container, anchor = null) {
         // 如果新旧节点不一样，则卸载旧的挂载新的
@@ -430,6 +578,34 @@ function createRender(options) {
         render
     }
 
+}
+
+function LIS(nums){
+    if (nums.length === 0) return []
+
+    // 先取得第一项
+    const results = [[nums[0]]]
+
+    for (let i = 1; i < nums.length; i++){
+        const n = nums[i]
+        _update(n)
+    }
+
+    function _update(n){
+        for (let i = results.length - 1; i >= 0; i--){
+            const line = results[i]
+            const tail = line[line.length - 1]
+
+            if (n > tail){
+                results[i+1] = [...line, n]
+                return
+            }
+        }
+        // 循环结束之后还不能进行拼接，将第一项改为当前的n
+        results[0] = [n]
+    }
+    // 返回数组最后一项
+    return results[results.length - 1]
 }
 
 
