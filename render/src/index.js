@@ -471,7 +471,7 @@ function createRender(options) {
                         // 当i===seq[s]，说明该节点不需要移动
                         // 只需要让s指向下一个位置
                         s--
-                    }
+                    }  
                 }
             }
         }
@@ -545,11 +545,67 @@ function createRender(options) {
                 patchChildren(oldVnode, newVnode, container)
             }
         } else if (typeof type === 'object'){
-            console.log('组件处理')
+            // 挂载组件
+            if (!oldVnode){
+                mountComponent(newVnode, container, anchor)
+            }else{
+                // 更新组件
+            }
         }else {
             console.log('未知类型')
         }
 
+
+    }
+
+    function mountComponent(vnode, container, anchor) {
+        // 获取组件对象
+        const componentOptions = vnode.type
+        // 获取组件渲染函数
+        const { render, data, beforeCreate, created, beforeMount, mounted, beforeUpdate, updated } = componentOptions
+
+        beforeCreate && beforeCreate()
+
+        // data是响应式数据，通过reactive进行包裹
+        const state = reactive(data())
+
+        const instance = {
+            state,
+            isMounted: false,
+            subTree: null
+        }
+
+        vnode.component = instance
+
+        created && created()
+
+
+        effect(()=>{
+            // 执行渲染函数，获取渲染内容，其实就是获取函数返回的虚拟DOM对象
+            // 调用render函数时将this指向state
+            // 这样在render函数中，就可以通过this访问到state
+            const subTree = render.call(state, state)
+            // 检查组件是否已经被挂载
+            if (!instance.isMounted){
+                beforeMount && beforeMount.call(state)
+                // 挂载
+                patch(null, subTree, container, anchor)
+                instance.isMounted = true
+
+                mounted && mounted.call(state)
+            }else {
+                beforeUpdate && beforeUpdate.call(state)
+                // 更新subTree
+                patch(instance.subTree, subTree, container, anchor)
+                updated && updated.call(state)
+            }
+
+            instance.subTree = subTree
+
+        }, {
+            // 避免频繁改动重复渲染
+            scheduler: queueJob
+        })
 
     }
     
@@ -608,6 +664,23 @@ function LIS(nums){
     return results[results.length - 1]
 }
 
+const queue = new Set()
+const p = Promise.resolve()
 
+function queueJob(job){
+
+    queue.add(job)
+
+    let isFlushing;
+    if (!isFlushing) {
+        isFlushing = true
+        p.then(() => {
+            queue.forEach(job => job())
+        }).finally(() => {
+            isFlushing = false
+            queue.clear()
+        })
+    }
+}
 
 
